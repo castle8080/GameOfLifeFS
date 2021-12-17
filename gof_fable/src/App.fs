@@ -186,7 +186,7 @@ module GameOfLife =
         action_processor (GameState.Action.FillRandom(p, rnd))
 
         // Run 1 step on timer
-        let timer_id = JS.setInterval (fun () -> action_processor GameState.Step) 200
+        let timer_id = JS.setInterval (fun () -> action_processor GameState.Step) 100
 
         ()
 
