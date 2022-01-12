@@ -33,26 +33,34 @@ open Browser.Types
 open Fable.Core
 open Fable.Core.JsInterop
 
-type game_state = {
+type GameState = {
+    // What round of the game it is.
     round: int;
+    
+    // The cells which are alive
     cells: Set<(int * int)>;
+
+    // How big the board is.
     width: int;
     height: int;
 }
 
 module GameState =
+    // List of vectors to find neibors of a given point
     let neighbor_pos_vec = [|
         (-1, 1); (0, 1); (1, 1);
         (-1, 0); (1, 0);
         (-1, -1); (0, -1); (1, -1);
     |]
 
+    // Actions which can be applied to a GameState to give the next GameState.
     type Action =
         | Clear
         | FillRandom of probability: float * rnd: (unit -> float)
         | Step
 
-    let create (width: int) (height: int): game_state = 
+    // Creates an initial empty game state.
+    let create (width: int) (height: int): GameState = 
         {
             round = 0;
             cells = Set.empty;
@@ -60,13 +68,15 @@ module GameState =
             height = height;
         }
 
-    let get_cell_live_neighbor_count (gs: game_state) (x, y) =
+    // Determines the count of live neighbors.
+    let get_cell_live_neighbor_count (gs: GameState) (x, y) =
         neighbor_pos_vec
         |> Seq.map (fun (dx, dy) -> (x + dx, y + dy))
         |> Seq.filter (fun p -> Set.contains p gs.cells)
         |> Seq.length
 
-    let get_cells_to_evaluate (gs: game_state) =
+    // Get all of the cell positions which have the potential to change in the next step.
+    let get_cells_to_evaluate (gs: GameState) =
         // Get the live cells and any adjacent cells to live ones.
         let neighbors =
             gs.cells
@@ -76,7 +86,8 @@ module GameState =
 
         Seq.append neighbors gs.cells |> Set.ofSeq
 
-    let cell_should_live (x, y) (gs: game_state) =
+    // Should a cell be alive in the next step?
+    let cell_should_live (x, y) (gs: GameState) =
         let l_count = get_cell_live_neighbor_count gs (x, y)
         let is_alive = Set.contains (x, y) gs.cells
 
@@ -95,7 +106,8 @@ module GameState =
 
         will_live
 
-    let add_cell x y (gs: game_state) =
+    // Sets a cell to live
+    let add_cell x y (gs: GameState) =
         if x < 0 || x >= gs.width || y < 0 || y >= gs.height then
             gs
         else
@@ -103,7 +115,8 @@ module GameState =
                 cells = Set.add (x, y) gs.cells
             }
         
-    let advance (gs: game_state) =
+    // Advance the game state 1 step
+    let advance (gs: GameState) =
         let apply_cell_action (cells: Set<int * int>) (should_live, (x, y)) =
             if should_live then
                 Set.add (x, y) cells
@@ -113,16 +126,13 @@ module GameState =
         let next_cells =
             gs
             |> get_cells_to_evaluate
-            |> Seq.map (fun c ->
-                let alive = Set.contains c gs.cells
-                c
-            )
             |> Seq.map (fun p -> (cell_should_live p gs, p))
             |> Seq.fold apply_cell_action gs.cells
 
         { gs with cells = next_cells }
 
-    let fill_random (p: float) (rand: unit -> float) (gs: game_state): game_state =
+    // Fill out some cells randomly.
+    let fill_random (p: float) (rand: unit -> float) (gs: GameState): GameState =
         let points =
             { 0 .. gs.width } |> Seq.collect (fun x ->
                 { 0 .. gs.height } |> Seq.map (fun y -> (x, y))
@@ -135,7 +145,8 @@ module GameState =
 
         new_state
 
-    let apply (action: Action) (gs: game_state): game_state =
+    // Applies an action to a game state and returns the new state.
+    let apply (action: Action) (gs: GameState): GameState =
         match action with
             | Clear ->
                 { gs with cells = Set.empty; round = 0; }
@@ -144,16 +155,17 @@ module GameState =
             | Step ->
                 advance gs
 
+// Responsible for rendering the game state to an HTML canvas.
 module GOFRenderer =
 
-    let render_bg (canvas: HTMLCanvasElement) (gs: game_state) =
+    let render_bg (canvas: HTMLCanvasElement) (gs: GameState) =
         let ctx = canvas.getContext_2d()
 
         ctx.rect(0.0, 0.0, float canvas.width, float canvas.height)
         ctx.fillStyle <- U3.Case1 "black"
         ctx.fill()
 
-    let render_cell (canvas: HTMLCanvasElement) (gs: game_state) (x: int) (y: int) =
+    let render_cell (canvas: HTMLCanvasElement) (gs: GameState) (x: int) (y: int) =
         let x_step = canvas.width / float (gs.width + 1)
         let y_step = canvas.height / float (gs.height + 1)
 
@@ -165,11 +177,12 @@ module GOFRenderer =
         ctx.fillStyle <- U3.Case1 "green"
         ctx.fillRect(x_start, y_start, x_step, y_step)
 
-    let render (canvas: HTMLCanvasElement) (gs: game_state) =
+    let render (canvas: HTMLCanvasElement) (gs: GameState) =
         render_bg canvas gs
         for (x, y) in gs.cells do
             render_cell canvas gs x y
 
+// Runs the game.
 module GameOfLife =
 
     let initialize () =
@@ -184,9 +197,16 @@ module GameOfLife =
 
         action_processor GameState.Action.Clear
         action_processor (GameState.Action.FillRandom(p, rnd))
+        
+        // Button clicks clear and restart.
+        let reset_btn = document.getElementById("btn_reset") :?> HTMLButtonElement
+        reset_btn.onclick <- (fun e ->
+            action_processor GameState.Action.Clear
+            action_processor (GameState.Action.FillRandom(p, rnd))
+        )
 
         // Run 1 step on timer
-        let timer_id = JS.setInterval (fun () -> action_processor GameState.Step) 100
+        let timer_id = JS.setInterval (fun () -> action_processor GameState.Action.Step) 100
 
         ()
 
